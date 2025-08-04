@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Monthly Shopping List</title>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #eef2f3;
+      padding: 20px;
+    }
+    .container {
+      max-width: 700px;
+      margin: auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 15px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    h2, .datetime {
+      text-align: center;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+      justify-content: space-between;
+    }
+    select, .form input, .form button {
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 16px;
+    }
+    .form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+      margin-top: 20px;
+    }
+    li {
+      background: #f9f9f9;
+      margin-bottom: 10px;
+      padding: 10px;
+      display: flex;
+      justify-content: space-between;
+      border-left: 5px solid red;
+      border-radius: 8px;
+      flex-wrap: wrap;
+    }
+    .verified {
+      border-left-color: green;
+    }
+    .task-info input, .task-info select {
+      margin-top: 5px;
+      font-size: 14px;
+    }
+    .task-info input[type='number'] {
+      width: 70px;
+    }
+    .btns button {
+      border: none;
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .verify-btn { background: #17a2b8; color: white; }
+    .delete-btn { background: #dc3545; color: white; }
+    .download-btn, .save-btn {
+      margin-top: 15px;
+      padding: 10px;
+      width: 100%;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .save-btn { background-color: #28a745; }
+  </style>
+</head>
+<body>
+
+<div class="container" id="receipt">
+  <h2>🛒 Monthly Appliance Shopping List</h2>
+  <div class="datetime" id="datetime"></div>
+
+  <div class="controls">
+    <div>
+      📅 Month:
+      <select id="monthSelect"></select>
+    </div>
+    <div>
+      📅 Year:
+      <select id="yearSelect"></select>
+    </div>
+  </div>
+
+  <div class="form">
+    <input type="text" id="taskInput" placeholder="Add appliance name">
+    <input type="number" id="priceInput" placeholder="Enter Price (₹)" min="1">
+    <input type="number" id="quantityInput" placeholder="Quantity" min="1">
+    <select id="unitSelect">
+      <option value="pcs">pcs</option>
+      <option value="kg">kg</option>
+      <option value="litre">litre</option>
+      <option value="g">g</option>
+      <option value="ml">ml</option>
+    </select>
+    <label><input type="checkbox" id="recurringInput"> Recurring monthly</label>
+    <button onclick="addTask()">Add Appliance</button>
+  </div>
+
+  <ul id="taskList"></ul>
+  <div class="total-box">
+    ✅ Total Verified Price: <span id="totalVerified">₹0</span>
+  </div>
+
+  <button class="save-btn" onclick="saveList()">💾 Save Monthly List</button>
+</div>
+
+<button class="download-btn" onclick="downloadReceipt()">📥 Download Bill (Image)</button>
+
+<script>
+  let tasks = [];
+
+  const monthSelect = document.getElementById('monthSelect');
+  const yearSelect = document.getElementById('yearSelect');
+
+  function populateMonthYear() {
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      monthSelect.innerHTML += `<option value="${i}" ${i === now.getMonth() ? "selected" : ""}>${months[i]}</option>`;
+    }
+    const year = now.getFullYear();
+    for (let i = year - 5; i <= year + 5; i++) {
+      yearSelect.innerHTML += `<option value="${i}" ${i === year ? "selected" : ""}>${i}</option>`;
+    }
+  }
+
+  function getStorageKey() {
+    return `shoppingList-${monthSelect.value}-${yearSelect.value}`;
+  }
+
+  function loadList() {
+    const data = localStorage.getItem(getStorageKey());
+    tasks = data ? JSON.parse(data) : [];
+
+    if (!data) {
+      const recurringItems = {};
+      for (let key in localStorage) {
+        if (key.startsWith("shoppingList-")) {
+          try {
+            const list = JSON.parse(localStorage.getItem(key));
+            list.forEach(item => {
+              if (item.recurring && !recurringItems[item.name]) {
+                recurringItems[item.name] = { ...item, verified: false };
+              }
+            });
+          } catch (e) {
+            console.warn("Corrupted storage:", key);
+          }
+        }
+      }
+      tasks = Object.values(recurringItems);
+    }
+
+    renderTasks();
+  }
+
+  function saveList() {
+    localStorage.setItem(getStorageKey(), JSON.stringify(tasks));
+    alert("List saved for selected month.");
+  }
+
+  function addTask() {
+    const name = document.getElementById('taskInput').value.trim();
+    const price = parseFloat(document.getElementById('priceInput').value);
+    const quantity = parseFloat(document.getElementById('quantityInput').value);
+    const unit = document.getElementById('unitSelect').value;
+    const recurring = document.getElementById('recurringInput').checked;
+
+    if (!name || isNaN(price) || price <= 0 || isNaN(quantity) || quantity <= 0) {
+      alert("Enter valid appliance name, quantity, and price.");
+      return;
+    }
+
+    if (tasks.some(t => t.name.toLowerCase() === name.toLowerCase())) {
+      alert("Appliance already in the list.");
+      return;
+    }
+
+    tasks.push({ name, price, verified: false, recurring, unit, quantity });
+    document.getElementById('taskInput').value = "";
+    document.getElementById('priceInput').value = "";
+    document.getElementById('quantityInput').value = "";
+    document.getElementById('recurringInput').checked = false;
+    renderTasks();
+  }
+
+  function toggleVerify(index) {
+    tasks[index].verified = !tasks[index].verified;
+    renderTasks();
+  }
+
+  function deleteTask(index) {
+    tasks.splice(index, 1);
+    renderTasks();
+  }
+
+  function updatePrice(index, newValue) {
+    const price = parseFloat(newValue);
+    if (!isNaN(price) && price > 0) {
+      tasks[index].price = price;
+      renderTasks();
+    } else {
+      alert("Enter a valid price.");
+    }
+  }
+
+  function updateQuantity(index, newValue) {
+    const qty = parseFloat(newValue);
+    if (!isNaN(qty) && qty > 0) {
+      tasks[index].quantity = qty;
+      renderTasks();
+    } else {
+      alert("Enter valid quantity.");
+    }
+  }
+
+  function updateUnit(index, newUnit) {
+    tasks[index].unit = newUnit;
+    renderTasks();
+  }
+
+  function renderTasks() {
+    const list = document.getElementById('taskList');
+    const totalDisplay = document.getElementById('totalVerified');
+    list.innerHTML = "";
+    let total = 0;
+
+    tasks.sort((a, b) => b.verified - a.verified).forEach((task, index) => {
+      const li = document.createElement('li');
+      li.className = task.verified ? 'verified' : '';
+      li.innerHTML = `
+        <div class="task-info">
+          ${task.verified ? '✔️' : '❌'} ${task.quantity} ${task.unit} ${task.name}
+          ₹ <input type="number" value="${task.price}" min="1" onchange="updatePrice(${index}, this.value)">
+          Qty: <input type="number" value="${task.quantity}" min="1" onchange="updateQuantity(${index}, this.value)">
+          <select onchange="updateUnit(${index}, this.value)">
+            <option value="pcs" ${task.unit === "pcs" ? "selected" : ""}>pcs</option>
+            <option value="kg" ${task.unit === "kg" ? "selected" : ""}>kg</option>
+            <option value="litre" ${task.unit === "litre" ? "selected" : ""}>litre</option>
+            <option value="g" ${task.unit === "g" ? "selected" : ""}>g</option>
+            <option value="ml" ${task.unit === "ml" ? "selected" : ""}>ml</option>
+          </select>
+          ${task.recurring ? "<small>(Recurring)</small>" : ""}
+        </div>
+        <div class="btns">
+          <button class="verify-btn" onclick="toggleVerify(${index})">✔</button>
+          <button class="delete-btn" onclick="deleteTask(${index})">✖</button>
+        </div>`;
+      list.appendChild(li);
+      if (task.verified) total += task.price;
+    });
+
+    totalDisplay.textContent = "₹" + total.toFixed(2);
+  }
+
+  function updateDateTime() {
+    const dt = new Date();
+    const formatted = dt.toLocaleString();
+    document.getElementById('datetime').textContent = `🕒 ${formatted}`;
+  }
+
+  function downloadReceipt() {
+    html2canvas(document.getElementById('receipt')).then(canvas => {
+      const link = document.createElement('a');
+      link.download = 'monthly-shopping-bill.png';
+      link.href = canvas.toDataURL();
+      link.click();
+    });
+  }
+
+  monthSelect.addEventListener("change", loadList);
+  yearSelect.addEventListener("change", loadList);
+
+  populateMonthYear();
+  loadList();
+  updateDateTime();
+  setInterval(updateDateTime, 1000);
+</script>
+
+</body>
+</html>
